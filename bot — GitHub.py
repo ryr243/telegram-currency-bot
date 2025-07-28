@@ -9,23 +9,22 @@ from telegram.ext import (
     ContextTypes,
     filters,
 )
+from config import TELEGRAM_TOKEN  # 🔐 Token is now taken from config.py
 
-# Словарь для отслеживания состояния пользователей
-user_states = {} 
+user_states = {}
 
-# Получение курса валют
 def get_currency_rates():
     try:
         response = requests.get("https://open.er-api.com/v6/latest/UAH")
         data = response.json()
         if data.get("result") != "success":
-            return "⚠️ Не удалось получить курс валют: сервер вернул ошибку" #Хуй мне в рот
+            return "⚠️ Failed to get currency rates."
 
         rates = data["rates"]
         today = datetime.now().strftime('%d.%m.%Y')
 
         return (
-            f"💱 Курсы валют на {today} (за 1 гривну):\n"
+            f"💱 Currency rates as of {today} (for 1 UAH):\n"
             f"USD: {round(rates.get('USD', 0), 4)}\n"
             f"EUR: {round(rates.get('EUR', 0), 4)}\n"
             f"PLN: {round(rates.get('PLN', 0), 4)}\n"
@@ -33,52 +32,49 @@ def get_currency_rates():
             f"BTC: {round(rates.get('BTC', 0), 6)}"
         )
     except Exception as e:
-        return f"⚠️ Не удалось получить курс валют: {e}"
+        return f"⚠️ Error while fetching data: {e}"
 
 
-# Стартовая команда
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
-        [InlineKeyboardButton("💱 Курс валют", callback_data='rate')],
-        [InlineKeyboardButton("🔁 Отправить курс сейчас", callback_data='now')],
-        [InlineKeyboardButton("💱 Перевести сумму", callback_data='convert')],
+        [InlineKeyboardButton("💱 Currency Rates", callback_data='rate')],
+        [InlineKeyboardButton("🔁 Send rates now", callback_data='now')],
+        [InlineKeyboardButton("💱 Convert Amount", callback_data='convert')],
         [
-            InlineKeyboardButton("✅ Подписаться", callback_data='subscribe'),
-            InlineKeyboardButton("❌ Отписаться", callback_data='unsubscribe'),
+            InlineKeyboardButton("✅ Subscribe", callback_data='subscribe'),
+            InlineKeyboardButton("❌ Unsubscribe", callback_data='unsubscribe'),
         ],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("Выбери действие:", reply_markup=reply_markup)
+    await update.message.reply_text("Choose an action:", reply_markup=reply_markup)
 
 
-# Обработка кнопок
 async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     user_id = query.from_user.id
     await query.answer()
 
-    if query.data == 'rate' or query.data == 'now':
+    if query.data in ['rate', 'now']:
         text = get_currency_rates()
         await query.edit_message_text(text=text)
 
     elif query.data == 'convert':
         user_states[user_id] = 'awaiting_amount'
-        await query.edit_message_text("💬 Введите сумму в гривнах, которую вы хотите перевести:")
+        await query.edit_message_text("💬 Enter the amount in UAH you want to convert:")
 
     elif query.data == 'subscribe':
-        await query.edit_message_text("🔔 Вы подписались на рассылку курса валют (функция пока в разработке).")
+        await query.edit_message_text("🔔 You have subscribed to currency rate updates (this feature is under development).")
 
     elif query.data == 'unsubscribe':
-        await query.edit_message_text("🔕 Вы отписались от рассылки курса валют.")
+        await query.edit_message_text("🔕 You have unsubscribed from currency rate updates.")
 
 
-# Обработка ввода суммы для конвертации
 async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     text = update.message.text.strip()
 
     if user_states.get(user_id) != 'awaiting_amount':
-        return 
+        return
 
     try:
         amount = float(text.replace(" ", "").replace(",", "."))
@@ -86,7 +82,7 @@ async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
         response = requests.get("https://open.er-api.com/v6/latest/UAH")
         data = response.json()
         if data.get("result") != "success":
-            await update.message.reply_text("⚠️ Не удалось получить курс валют.")
+            await update.message.reply_text("⚠️ Failed to get currency rates.")
             return
 
         rates = data["rates"]
@@ -97,7 +93,7 @@ async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
         btc = round(rates.get("BTC", 0) * amount, 6)
 
         reply = (
-            f"💱 Перевод {amount} гривен:\n"
+            f"💱 Conversion of {amount} UAH:\n"
             f"USD: {usd}\n"
             f"EUR: {eur}\n"
             f"PLN: {pln}\n"
@@ -108,23 +104,19 @@ async def handle_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(reply)
 
     except ValueError:
-        await update.message.reply_text("❌ Введите сумму в виде числа, например: `1000`", parse_mode='Markdown')
-
+        await update.message.reply_text("❌ Please enter the amount as a number, e.g., `1000`", parse_mode='Markdown')
     finally:
-        user_states[user_id] = None  # Сброс состояния
+        user_states[user_id] = None
 
 
-# Запуск бота(Пупсика)
 def main():
-    TELEGRAM_TOKEN = "..."
-
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(handle_button))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_amount))
 
-    print("✅ Бот запущен...")
+    print("✅ Bot is running...")
     app.run_polling()
 
 
